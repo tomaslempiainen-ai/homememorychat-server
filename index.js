@@ -1,43 +1,68 @@
 import express from "express";
 import cors from "cors";
 import OpenAI from "openai";
+import { createClient } from "@supabase/supabase-js";
 
 const app = express();
 
+// --------------------
 // Middlewaret
-app.use(cors());
+// --------------------
+app.use(
+  cors({
+    origin: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
 app.use(express.json({ limit: "1mb" }));
 
 // --------------------
-// Health check (julkinen)
+// Supabase client (backend)
+// --------------------
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
+
+// --------------------
+// Health check (julkinen) – VERSION TEST
 // --------------------
 app.get("/healthz", (req, res) => {
-  res.status(200).send("ok");
+  res.status(200).send("ok-v2");
 });
 
 // --------------------
-// API-lukitus: vaadi client key /chat:ille
+// Auth middleware: vaadi Supabase access token
 // --------------------
-function requireClientKey(req, res, next) {
-  const clientKey = req.headers["x-client-key"]; // header-nimi: x-client-key
-  const expectedKey = process.env.CLIENT_API_KEY;
+async function requireSupabaseAuth(req, res, next) {
+  try {
+    const auth = req.headers.authorization || "";
+    const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
 
-  if (!expectedKey) {
-    // Renderissä pitäisi olla CLIENT_API_KEY asetettuna
-    return res.status(500).json({ error: "CLIENT_API_KEY is missing on server" });
+    if (!token) {
+      return res.status(401).json({ error: "Missing Bearer token" });
+    }
+
+    const { data, error } = await supabase.auth.getUser(token);
+
+    if (error || !data?.user) {
+      return res.status(401).json({ error: "Invalid token" });
+    }
+
+    // Käyttäjä saatavilla reitissä
+    req.user = data.user;
+    next();
+  } catch (err) {
+    console.error("❌ Auth error:", err);
+    return res.status(401).json({ error: "Auth check failed" });
   }
-
-  if (!clientKey || clientKey !== expectedKey) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  next();
 }
 
 // --------------------
-// Chat endpoint (lukittu)
+// Chat endpoint (suojattu Supabase-tokenilla)
 // --------------------
-app.post("/chat", requireClientKey, async (req, res) => {
+app.post("/chat", requireSupabaseAuth, async (req, res) => {
   try {
     const { messages } = req.body;
 
@@ -57,6 +82,8 @@ app.post("/chat", requireClientKey, async (req, res) => {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
+    console.log("🤖 Chat request from user:", req.user.id);
+
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages,
@@ -65,7 +92,6 @@ app.post("/chat", requireClientKey, async (req, res) => {
     const reply = completion?.choices?.[0]?.message?.content ?? "";
     return res.status(200).json({ reply });
   } catch (error) {
-    // Yritetään poimia OpenAI:n virheestä järkevä viesti
     const status = error?.status || 500;
     const message =
       error?.error?.message ||
@@ -74,10 +100,12 @@ app.post("/chat", requireClientKey, async (req, res) => {
 
     console.error("❌ OpenAI error:", status, message);
 
-    // Esim. quota / rate limit -> 429
     if (status === 401) {
-      return res.status(500).json({ error: "OpenAI auth failed (check OPENAI_API_KEY)" });
+      return res
+        .status(500)
+        .json({ error: "OpenAI auth failed (check OPENAI_API_KEY)" });
     }
+
     if (status === 429) {
       return res.status(429).json({ error: message });
     }
