@@ -50,7 +50,6 @@ async function requireSupabaseAuth(req, res, next) {
       return res.status(401).json({ error: "Invalid token" });
     }
 
-    // Käyttäjä saatavilla reitissä
     req.user = data.user;
     next();
   } catch (err) {
@@ -93,10 +92,7 @@ app.post("/chat", requireSupabaseAuth, async (req, res) => {
     return res.status(200).json({ reply });
   } catch (error) {
     const status = error?.status || 500;
-    const message =
-      error?.error?.message ||
-      error?.message ||
-      "AI error";
+    const message = error?.error?.message || error?.message || "AI error";
 
     console.error("❌ OpenAI error:", status, message);
 
