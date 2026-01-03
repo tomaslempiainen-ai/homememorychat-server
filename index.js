@@ -73,7 +73,7 @@ async function requireSupabaseAuth(req, res, next) {
 // --------------------
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 min
-  max: 20,             // max 20 pyyntöä / minuutti / käyttäjä
+  max: 3,             // max 20 pyyntöä / minuutti / käyttäjä
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => req.user?.id || req.ip, // tärkein: per-user
