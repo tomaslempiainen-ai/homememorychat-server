@@ -1,3 +1,4 @@
+import "dotenv/config"; // 👈 TÄRKEÄ: lataa env-varit
 import express from "express";
 import cors from "cors";
 import OpenAI from "openai";
@@ -20,6 +21,11 @@ app.use(express.json({ limit: "1mb" }));
 // --------------------
 // Supabase client (backend)
 // --------------------
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+  console.error("❌ Missing SUPABASE_URL or SUPABASE_ANON_KEY");
+  process.exit(1); // Render näkee tämän selvästi logissa
+}
+
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY
@@ -96,12 +102,6 @@ app.post("/chat", requireSupabaseAuth, async (req, res) => {
 
     console.error("❌ OpenAI error:", status, message);
 
-    if (status === 401) {
-      return res
-        .status(500)
-        .json({ error: "OpenAI auth failed (check OPENAI_API_KEY)" });
-    }
-
     if (status === 429) {
       return res.status(429).json({ error: message });
     }
@@ -114,8 +114,7 @@ app.post("/chat", requireSupabaseAuth, async (req, res) => {
 // Server start (Render)
 // --------------------
 const PORT = process.env.PORT || 3001;
-const HOST = "0.0.0.0";
 
-app.listen(PORT, HOST, () => {
-  console.log(`✅ Server listening on ${HOST}:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Server listening on 0.0.0.0:${PORT}`);
 });
